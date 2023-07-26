@@ -1,15 +1,17 @@
 package io.github.cjstehno.serpent;
 
+import io.github.cjstehno.serpent.CommandRunner.LoggingLineHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static io.github.cjstehno.serpent.CommandRunner.forCommand;
 
 @RequiredArgsConstructor @Slf4j
 public class Venv {
@@ -52,87 +54,38 @@ public class Venv {
     }
 
     public static Venv useVenv(final Path venvPath) throws IOException, InterruptedException {
-        val command = new String[]{"bash", "-c", venvPath.resolve("bin/python") + " --version"};
-        val proc = new ProcessBuilder(command).start();
+        val version = new AtomicReference<String>();
 
-        String version = "";
+        val cmd = forCommand(venvPath.resolve("bin/python") + " --version")
+            .outputHandler(line -> version.set(line.split(" ")[1]))
+            .errorHandler(new LoggingLineHandler(true));
 
-        // Read the output
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                version = line.split(" ")[1];
-            }
-        }
+        val exitCode = cmd.execute();
+        log.info("Finished (exit code {})", exitCode);
 
-        // Read the errors
-        try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(proc.getErrorStream()))) {
-            String errorLine;
-            while ((errorLine = errorReader.readLine()) != null) {
-                log.error("[Python] {}", errorLine);
-            }
-        }
-
-        proc.waitFor();
-
-        return new Venv(venvPath, version);
+        return new Venv(venvPath, version.get());
     }
 
     // FIXME: pyenv must be installed and accessible (with desired version installed)
     // NOTE: this operation takes some time
     public static Venv createVenv(final Path workingDir, final String pyVersion, final Path venvPath) throws IOException, InterruptedException {
-        // FIXME: pyenv install version
-        // FIXME: use pyenv as version to create venv
-        // FIXME install
-        // pyenv shell 3.9.5 && python -m venv /path/to/your/venv
+        val cmd = forCommand("pyenv local " + pyVersion + " && python -m venv " + venvPath)
+            .workingDir(workingDir)
+            .outputHandler(new LoggingLineHandler(false))
+            .errorHandler(new LoggingLineHandler(true));
 
-        val command = new String[]{"bash", "-c", "pyenv local " + pyVersion + " && python -m venv " + venvPath};
-        val proc = new ProcessBuilder(command).directory(workingDir.toFile()).start();
-
-        // Read the output
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.info("[Python] {}", line.trim());
-            }
-        }
-
-        // Read the errors
-        try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(proc.getErrorStream()))) {
-            String errorLine;
-            while ((errorLine = errorReader.readLine()) != null) {
-                log.error("[Python] {}", errorLine);
-            }
-        }
-
-        val exitCode = proc.waitFor();
+        val exitCode = cmd.execute();
         log.info("Finished (exit code {})", exitCode);
 
         return new Venv(venvPath, pyVersion);
     }
 
     public Venv installRequirements(final Path requirementsPath) throws IOException, InterruptedException {
-        // bash -c python -m pip install -r requirements
-        val command = new String[]{"bash", "-c", pathFor("bin/python") + " -m pip install -r " + requirementsPath};
-        val proc = new ProcessBuilder(command).start();
+        val cmd = forCommand(pathFor("bin/python") + " -m pip install -r " + requirementsPath)
+            .outputHandler(new LoggingLineHandler(false))
+            .errorHandler(new LoggingLineHandler(true));
 
-        // Read the output
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.info("[Python] {}", line.trim());
-            }
-        }
-
-        // Read the errors
-        try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(proc.getErrorStream()))) {
-            String errorLine;
-            while ((errorLine = errorReader.readLine()) != null) {
-                log.error("[Python] {}", errorLine);
-            }
-        }
-
-        val exitCode = proc.waitFor();
+        val exitCode = cmd.execute();
         log.info("Finished (exit code {})", exitCode);
 
         return this;
@@ -147,26 +100,11 @@ public class Venv {
     }
 
     public Venv install(final String requirement) throws IOException, InterruptedException {
-        val command = new String[]{"bash", "-c", pathFor("bin/python") + " -m pip install " + requirement};
-        val proc = new ProcessBuilder(command).start();
+        val cmd = forCommand(pathFor("bin/python") + " -m pip install " + requirement)
+            .outputHandler(new LoggingLineHandler(false))
+            .errorHandler(new LoggingLineHandler(true));
 
-        // Read the output
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.info("[Python] {}", line.trim());
-            }
-        }
-
-        // Read the errors
-        try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(proc.getErrorStream()))) {
-            String errorLine;
-            while ((errorLine = errorReader.readLine()) != null) {
-                log.error("[Python] {}", errorLine);
-            }
-        }
-
-        val exitCode = proc.waitFor();
+        val exitCode = cmd.execute();
         log.info("Finished (exit code {})", exitCode);
 
         return this;
